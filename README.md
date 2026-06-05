@@ -6,4 +6,4 @@ ctive UI updates.
 ## 📸 App Showcase
 
 
-| <img src="c1.jpg" width="220" /> | <img src="images/c2.jpg" width="220" /> | <img src="images/c3.jpg" width="220" /> | <img src="images/c4.jpg" width="220" /> |
+| <img src="c1.jpg" width="220" /> | <img src="c2.jpg" width="220" /> | <img src="c3.jpg" width="220" /> | <img src="c4.jpg" width="220" /> |
