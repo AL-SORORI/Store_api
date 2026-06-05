@@ -1,30 +1,62 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:lesson_8_app/main.dart';
+import 'package:lesson_8_app/models/product.dart';
+import 'package:lesson_8_app/providers/shop_provider.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  TestWidgetsFlutterBinding.ensureInitialized();
+  group('ShopProvider Tests', () {
+    late ShopProvider provider;
+    late Product sampleProduct;
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    setUp(() {
+      provider = ShopProvider();
+      sampleProduct = Product(
+        id: 'test_p1',
+        name: 'Test Product',
+        description: 'Test Description',
+        price: 10.0,
+        imageUrl: 'https://example.com/image.png',
+        category: 'Electronics',
+      );
+    });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    test('Initial state check', () {
+      expect(provider.cartItems.isEmpty, true);
+      expect(provider.cartItemCount, 0);
+      expect(provider.favoriteProducts.isEmpty, true);
+    });
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    test('Add to Cart increases quantity and count', () {
+      provider.addToCart(sampleProduct);
+      expect(provider.cartItems.length, 1);
+      expect(provider.cartItemCount, 1);
+      expect(provider.cartSubtotal, 10.0);
+
+      // Add same product again
+      provider.addToCart(sampleProduct);
+      expect(provider.cartItems.length, 1);
+      expect(provider.cartItemCount, 2);
+      expect(provider.cartSubtotal, 20.0);
+    });
+
+    test('Remove from Cart clears item', () {
+      provider.addToCart(sampleProduct);
+      expect(provider.cartItemCount, 1);
+
+      provider.removeFromCart(sampleProduct.id);
+      expect(provider.cartItems.isEmpty, true);
+      expect(provider.cartItemCount, 0);
+    });
+
+    test('Toggle favorite updates in-memory favoriteProducts', () {
+      // Create a test product that is in provider's initial list to test toggle
+      // Since fetchProducts is asynchronous, we can directly add to loadedFavorites
+      provider.toggleFavorite('p1');
+      expect(provider.favoriteProducts.any((p) => p.id == 'p1'), true);
+
+      // Toggle again to remove
+      provider.toggleFavorite('p1');
+      expect(provider.favoriteProducts.any((p) => p.id == 'p1'), false);
+    });
   });
 }

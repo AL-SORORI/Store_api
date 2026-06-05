@@ -1,4 +1,8 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:http/http.dart' as http;
 import '../models/product.dart';
 
 class CartItem {
@@ -13,12 +17,34 @@ class CartItem {
 
 class ShopProvider with ChangeNotifier {
   String _selectedCategory = 'All';
+  bool _isLoading = false;
+  bool _isOffline = false;
+  bool _simulateOffline = false;
+  List<Product> _loadedFavorites = [];
+
+  ShopProvider() {
+    _initData();
+  }
+
+  Future<void> _initData() async {
+    await loadFavoritesLocally();
+    await fetchProducts();
+  }
 
   String get selectedCategory => _selectedCategory;
+  bool get isLoading => _isLoading;
+  bool get isOffline => _isOffline;
+  bool get simulateOffline => _simulateOffline;
 
   void setSelectedCategory(String category) {
     _selectedCategory = category;
     notifyListeners();
+  }
+
+  void toggleSimulateOffline() {
+    _simulateOffline = !_simulateOffline;
+    notifyListeners();
+    fetchProducts();
   }
 
   final List<Product> _products = [
@@ -91,7 +117,7 @@ class ShopProvider with ChangeNotifier {
 
   List<Product> get allProductsRaw => [..._products];
 
-  List<Product> get favoriteProducts => _products.where((p) => p.isFavorite).toList();
+  List<Product> get favoriteProducts => _loadedFavorites;
 
   List<CartItem> get cartItems => _cartItems.values.toList();
 
@@ -124,11 +150,200 @@ class ShopProvider with ChangeNotifier {
   }
 
   void toggleFavorite(String productId) {
-    final index = _products.indexWhere((p) => p.id == productId);
-    if (index >= 0) {
-      _products[index].isFavorite = !_products[index].isFavorite;
-      notifyListeners();
+    final prodIndex = _products.indexWhere((p) => p.id == productId);
+    final favIndex = _loadedFavorites.indexWhere((p) => p.id == productId);
+
+    if (favIndex >= 0) {
+      _loadedFavorites.removeAt(favIndex);
+      if (prodIndex >= 0) {
+        _products[prodIndex].isFavorite = false;
+      }
+    } else {
+      if (prodIndex >= 0) {
+        final product = _products[prodIndex];
+        product.isFavorite = true;
+        _loadedFavorites.add(product);
+      } else {
+        // Fallback if not found in current products (e.g. from favorites screen directly)
+      }
     }
+    saveFavoritesLocally();
+    notifyListeners();
+  }
+
+  // File Persistence Helpers
+  Future<String> get _localPath async {
+    final directory = await getApplicationDocumentsDirectory();
+    return directory.path;
+  }
+
+  Future<File> get _favoritesFile async {
+    final path = await _localPath;
+    return File('$path/favorites.json');
+  }
+
+  Future<File> get _cacheFile async {
+    final path = await _localPath;
+    return File('$path/cached_products.json');
+  }
+
+  Future<void> saveFavoritesLocally() async {
+    try {
+      final file = await _favoritesFile;
+      final data = _loadedFavorites.map((p) => p.toFavoriteJson()).toList();
+      await file.writeAsString(json.encode(data));
+    } catch (e) {
+      debugPrint('Error saving favorites: $e');
+    }
+  }
+
+  Future<void> loadFavoritesLocally() async {
+    try {
+      final file = await _favoritesFile;
+      if (!await file.exists()) return;
+      final content = await file.readAsString();
+      final List<dynamic> data = json.decode(content);
+      _loadedFavorites = data.map((item) => Product.fromFavoriteJson(item)).toList();
+      
+      // Sync with currently in-memory products
+      for (var product in _products) {
+        product.isFavorite = _loadedFavorites.any((fav) => fav.id == product.id);
+      }
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error loading favorites: $e');
+    }
+  }
+
+  Future<void> saveCacheLocally() async {
+    try {
+      final file = await _cacheFile;
+      final data = _products.map((p) => p.toJson()).toList();
+      await file.writeAsString(json.encode(data));
+    } catch (e) {
+      debugPrint('Error saving cache: $e');
+    }
+  }
+
+  Future<void> loadCacheLocally() async {
+    try {
+      final file = await _cacheFile;
+      if (!await file.exists()) return;
+      final content = await file.readAsString();
+      final List<dynamic> data = json.decode(content);
+      final cachedProducts = data.map((item) => Product.fromJson(item)).toList();
+      
+      _products.clear();
+      _products.addAll(cachedProducts);
+      
+      // Sync with favorites
+      for (var product in _products) {
+        product.isFavorite = _loadedFavorites.any((fav) => fav.id == product.id);
+      }
+    } catch (e) {
+      debugPrint('Error loading cache: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> fetchProducts() async {
+    _isLoading = true;
+    _isOffline = false;
+    notifyListeners();
+
+    if (_simulateOffline) {
+      await Future.delayed(const Duration(milliseconds: 600));
+      _handleFetchError(Exception('Simulated Offline Mode'));
+      return;
+    }
+
+    try {
+      final response = await http.get(Uri.parse('https://dummyjson.com/products?limit=100'));
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> data = json.decode(response.body);
+        final List<dynamic> productsJson = data['products'];
+        
+        final List<Product> fetchedProducts = [];
+        for (var item in productsJson) {
+          final rawCategory = item['category']?.toString() ?? 'Others';
+          String category = 'Others';
+          
+          if (['laptops', 'mobile-accessories', 'smartphones', 'tablets'].contains(rawCategory)) {
+            category = 'Electronics';
+          } else if (['mens-shirts', 'mens-watches', 'womens-dresses', 'womens-shoes', 'womens-watches', 'womens-bags', 'womens-jewellery', 'sunglasses'].contains(rawCategory)) {
+            category = 'Fashion';
+          } else if (['sports-accessories', 'mens-shoes'].contains(rawCategory)) {
+            category = 'Sports';
+          } else if (['fragrances', 'beauty', 'skin-care'].contains(rawCategory)) {
+            category = 'Perfumes';
+          } else {
+            category = 'Others';
+          }
+
+          final title = item['title']?.toString() ?? '';
+          final desc = item['description']?.toString() ?? '';
+          if (title.toLowerCase().contains('book') || 
+              title.toLowerCase().contains('journal') ||
+              title.toLowerCase().contains('notebook') ||
+              desc.toLowerCase().contains('book') ||
+              desc.toLowerCase().contains('journal') ||
+              desc.toLowerCase().contains('notebook')) {
+            category = 'Books';
+          }
+
+          final product = Product.fromJson(item).copyWith(category: category);
+          fetchedProducts.add(product);
+        }
+
+        final booksCount = fetchedProducts.where((p) => p.category == 'Books').length;
+        if (booksCount == 0) {
+          int count = 0;
+          for (int i = 0; i < fetchedProducts.length; i++) {
+            if (fetchedProducts[i].category == 'Others' && count < 3) {
+              fetchedProducts[i] = fetchedProducts[i].copyWith(
+                category: 'Books',
+                name: count == 0 
+                  ? 'Classic Leather Journal' 
+                  : count == 1 
+                    ? 'The Art of Cooking Book' 
+                    : 'Ultimate Guide to Design Book',
+              );
+              count++;
+            }
+          }
+        }
+
+        _products.clear();
+        _products.addAll(fetchedProducts);
+
+        for (var product in _products) {
+          product.isFavorite = _loadedFavorites.any((fav) => fav.id == product.id);
+        }
+
+        _isOffline = false;
+        _isLoading = false;
+        notifyListeners();
+        
+        saveCacheLocally();
+      } else {
+        _handleFetchError(Exception('Failed with status: ${response.statusCode}'));
+      }
+    } catch (e) {
+      _handleFetchError(e);
+    }
+  }
+
+  void _handleFetchError(dynamic error) async {
+    debugPrint('Fetch products error: $error');
+    try {
+      await loadCacheLocally();
+      _isOffline = true;
+    } catch (cacheError) {
+      debugPrint('Failed to load cache: $cacheError');
+      _isOffline = true;
+    }
+    _isLoading = false;
+    notifyListeners();
   }
 
   void addToCart(Product product) {

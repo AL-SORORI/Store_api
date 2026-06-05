@@ -36,4 +36,49 @@ class Product {
       isFavorite: isFavorite ?? this.isFavorite,
     );
   }
+
+  factory Product.fromJson(Map<String, dynamic> json) {
+    return Product(
+      id: json['id']?.toString() ?? '',
+      name: json['name'] ?? json['title'] ?? '',
+      description: json['description'] ?? '',
+      price: (json['price'] as num?)?.toDouble() ?? 0.0,
+      imageUrl: json['imageUrl'] ?? json['thumbnail'] ?? json['image'] ?? '',
+      category: json['category'] ?? 'Others',
+      isFavorite: json['isFavorite'] ?? false,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'description': description,
+      'price': price,
+      'imageUrl': imageUrl,
+      'category': category,
+      'isFavorite': isFavorite,
+    };
+  }
+
+  Map<String, dynamic> toFavoriteJson() {
+    return {
+      'id': id,
+      'name': name,
+      'price': price,
+      'imageUrl': imageUrl,
+    };
+  }
+
+  factory Product.fromFavoriteJson(Map<String, dynamic> json) {
+    return Product(
+      id: json['id']?.toString() ?? '',
+      name: json['name'] ?? '',
+      description: '',
+      price: (json['price'] as num?)?.toDouble() ?? 0.0,
+      imageUrl: json['imageUrl'] ?? '',
+      category: 'Others',
+      isFavorite: true,
+    );
+  }
 }

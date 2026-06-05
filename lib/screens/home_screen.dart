@@ -18,9 +18,13 @@ class HomeScreen extends StatelessWidget {
           builder: (context, shop, _) {
             final products = shop.products;
 
-            return CustomScrollView(
-              physics: const BouncingScrollPhysics(),
-              slivers: [
+            return RefreshIndicator(
+              color: AppTheme.accentBlue,
+              backgroundColor: AppTheme.cardBg,
+              onRefresh: () => shop.fetchProducts(),
+              child: CustomScrollView(
+                physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+                slivers: [
                 // AppBar Header
                 SliverToBoxAdapter(
                   child: Padding(
@@ -45,24 +49,108 @@ class HomeScreen extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: 12),
-                        Container(
-                          width: 48,
-                          height: 48,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(color: AppTheme.accentBlue.withOpacity(0.4), width: 1.5),
-                            color: AppTheme.cardBg,
-                          ),
-                          child: const Icon(
-                            Icons.person_outline_rounded,
-                            color: AppTheme.accentBlue,
-                            size: 24,
+                        GestureDetector(
+                          onTap: () {
+                            shop.toggleSimulateOffline();
+                            ScaffoldMessenger.of(context).clearSnackBars();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  shop.simulateOffline
+                                      ? 'Simulated Offline Mode Enabled'
+                                      : 'Online Mode Restored',
+                                  style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+                                ),
+                                backgroundColor: shop.simulateOffline ? Colors.amber[800] : AppTheme.accentBlue,
+                                duration: const Duration(seconds: 2),
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
+                          },
+                          child: Container(
+                            width: 48,
+                            height: 48,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: shop.simulateOffline 
+                                    ? Colors.amber.withOpacity(0.6) 
+                                    : AppTheme.accentBlue.withOpacity(0.4), 
+                                width: 1.5,
+                              ),
+                              color: AppTheme.cardBg,
+                            ),
+                            child: Icon(
+                              shop.simulateOffline
+                                  ? Icons.wifi_off_rounded
+                                  : Icons.wifi_rounded,
+                              color: shop.simulateOffline ? Colors.amber : AppTheme.accentBlue,
+                              size: 24,
+                            ),
                           ),
                         ),
                       ],
                     ),
                   ),
                 ),
+
+                // Offline Mode Warning Banner
+                if (shop.isOffline)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 8.0),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(15),
+                          border: Border.all(color: Colors.amber.withOpacity(0.3)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.wifi_off_rounded, color: Colors.amber, size: 22),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Offline Mode',
+                                    style: TextStyle(
+                                      color: Colors.amber,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'Showing last cached products.',
+                                    style: TextStyle(
+                                      color: Colors.amber.withOpacity(0.8),
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: () => shop.fetchProducts(),
+                              style: TextButton.styleFrom(
+                                foregroundColor: Colors.amber,
+                                padding: EdgeInsets.zero,
+                                minimumSize: Size.zero,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                              child: const Text(
+                                'Retry',
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
 
                 // Search Bar
                 SliverToBoxAdapter(
@@ -253,47 +341,57 @@ class HomeScreen extends StatelessWidget {
                 ),
 
                 // Products Grid
-                products.isEmpty
-                    ? SliverFillRemaining(
+                shop.isLoading
+                    ? const SliverFillRemaining(
                         hasScrollBody: false,
                         child: Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.inventory_2_outlined, color: Colors.grey[700], size: 48),
-                              const SizedBox(height: 12),
-                              Text(
-                                'No products found in this category',
-                                style: TextStyle(color: Colors.grey[500]),
-                              ),
-                            ],
+                          child: CircularProgressIndicator(
+                            color: AppTheme.accentBlue,
                           ),
                         ),
                       )
-                    : SliverPadding(
-                        padding: const EdgeInsets.symmetric(horizontal: 20.0),
-                        sliver: SliverGrid(
-                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 2,
-                            childAspectRatio: 0.72,
-                            crossAxisSpacing: 14,
-                            mainAxisSpacing: 14,
+                    : products.isEmpty
+                        ? SliverFillRemaining(
+                            hasScrollBody: false,
+                            child: Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.inventory_2_outlined, color: Colors.grey[700], size: 48),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    'No products found in this category',
+                                    style: TextStyle(color: Colors.grey[500]),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )
+                        : SliverPadding(
+                            padding: const EdgeInsets.symmetric(horizontal: 20.0),
+                            sliver: SliverGrid(
+                              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 2,
+                                childAspectRatio: 0.72,
+                                crossAxisSpacing: 14,
+                                mainAxisSpacing: 14,
+                              ),
+                              delegate: SliverChildBuilderDelegate(
+                                (context, index) {
+                                  return ProductCard(product: products[index]);
+                                },
+                                childCount: products.length,
+                              ),
+                            ),
                           ),
-                          delegate: SliverChildBuilderDelegate(
-                            (context, index) {
-                              return ProductCard(product: products[index]);
-                            },
-                            childCount: products.length,
-                          ),
-                        ),
-                      ),
 
                 // Bottom padding
                 const SliverToBoxAdapter(
                   child: SizedBox(height: 30),
                 ),
               ],
-            );
+            ),
+          );
           },
         ),
       ),
